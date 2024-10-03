@@ -1,0 +1,160 @@
+{
+  "name": "PowerStationTycoon",
+  "tree": {
+    "$className": "DataModel",
+
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": {
+        "FilteringEnabled": true
+      },
+      "Terrain": {
+        "$className": "Folder"
+      },
+      "Blocks": {
+        "$className": "Folder"
+      },
+      "Logic": {
+        "$className": "Folder"
+      },
+      "Plots": {
+        "$className": "Folder"
+      },
+      "Spawns": {
+        "$className": "Folder"
+      },
+      "TreeRegions": {
+        "$className": "Folder"
+      },
+      "VM_W_OffsetFolder": {
+        "$className": "Folder"
+      },
+      "VehicleSpawnPoints": {
+        "$className": "Folder"
+      },
+      "Visual": {
+        "$className": "Folder"
+      },
+      "Boat": {
+        "$className": "Folder"
+      },
+      "Coastline": {
+        "$className": "Folder"
+      },
+      "Gates": {
+        "$className": "Folder"
+      },
+      "Region_PowerStation": {
+        "$className": "Folder"
+      },
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Color": [
+            0.38823,
+            0.37254,
+            0.38823
+          ],
+          "Locked": true,
+          "Position": [
+            0,
+            -10,
+            0
+          ],
+          "Size": [
+            512,
+            20,
+            512
+          ]
+        }
+      },
+      "Dock": {
+        "$className": "Folder"
+      }
+    },
+
+    "Lighting": {
+      "$className": "Lighting",
+      "$properties": {
+        "Ambient": [
+          0,
+          0,
+          0
+        ],
+        "Brightness": 2,
+        "GlobalShadows": true,
+        "Outlines": false,
+        "Technology": "Voxel"
+      }
+    },
+
+    "Players": {
+      "$className": "Players"
+    },
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Builder": {
+        "$className": "Folder",
+        "Builds": {
+          "$className": "Folder"
+        },
+        "Decoration": {
+          "$className": "Folder"
+        },
+        "Interior": {
+          "$className": "Folder"
+        }
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Components": {
+        "$className": "Folder"
+      },
+
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Drops": {
+        "$className": "Folder"
+      },
+      "TagList": {
+        "$className": "Folder"
+      },
+      "Tools": {
+        "$className": "Folder"
+      },
+      "TycoonStorage": {
+        "$className": "Folder"
+      },
+      "Vehicles": {
+        "$className": "Folder"
+      },
+      "Trees": {
+        "$className": "Folder"
+      }
+    },
+
+    "StarterGui": {
+      "$className": "StarterGui",
+      "BuildConfigs": {
+        "$className": "Folder"
+      },
+      "PlotBuyGui": {
+        "$className": "Folder"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterCharacterScripts": {
+        "$className": "Folder"
+      },
+      "StarterPlayerScripts": {
+        "$className": "Folder"
+      }
+    }
+  }
+}
