@@ -113,7 +113,8 @@
       "$className": "ServerScriptService",
       "Components": {
         "$className": "Folder"
-      },
+      }
+    },
 
     "ServerStorage": {
       "$className": "ServerStorage",
