@@ -9,7 +9,7 @@ local plotButtons = plotBuyGui:WaitForChild("PlotButtons")
 local setPlotEvent = ReplicatedStorage:WaitForChild("SetPlotEvent")
 local getPlotFunction = ReplicatedStorage:WaitForChild("GetPlotFunction")
 
-local restoreEvent = ReplicatedStorage:WaitForChild("restoreEvent")
+local restoreEvent = ReplicatedStorage:WaitForChild("restoreEvent", 5)
 
 -- Variable to store the selected plot
 local selectedPlot = nil
@@ -33,14 +33,6 @@ local function buyPlot(plotName)
 	setPlotEvent:FireServer(plotName)
 	selectedPlot = plotName
 	showNotification("You now own " .. plotName)
-end
-
-local restoreButton = script.Parent:FindFirstChild("RestoreButton")  -- Ensure the correct path to the button
-if restoreButton then
-	restoreButton.MouseButton1Click:Connect(function()
-		print("Restore button clicked, sending event to server")  -- Debugging log to check if the button is working
-		restoreEvent:FireServer()  -- Send restore event to the server
-	end)
 end
 
 -- Function to restore a plot

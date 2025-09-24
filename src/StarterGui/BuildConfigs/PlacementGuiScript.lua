@@ -6,6 +6,20 @@ local user = Players.LocalPlayer
 local placementEvent = ReplicatedStorage:WaitForChild("PlacementEvent")
 local getPlotFunction = ReplicatedStorage:WaitForChild("GetPlotFunction")  -- Add this line
 
+local showGridEvent = ReplicatedStorage:FindFirstChild("ShowGridEvent")
+if not showGridEvent then
+	showGridEvent = Instance.new("BindableEvent")
+	showGridEvent.Name = "ShowGridEvent"
+	showGridEvent.Parent = ReplicatedStorage
+end
+
+local hideGridEvent = ReplicatedStorage:FindFirstChild("HideGridEvent")
+if not hideGridEvent then
+	hideGridEvent = Instance.new("BindableEvent")
+	hideGridEvent.Name = "HideGridEvent"
+	hideGridEvent.Parent = ReplicatedStorage
+end
+
 local leaderstats = user:WaitForChild("leaderstats")  -- Wait for leaderstats to be available
 local moneyValue = leaderstats:WaitForChild("Money")  -- Wait for Money to be available
 
@@ -35,8 +49,49 @@ local placeEvent = ReplicatedStorage:WaitForChild("PlaceEvent")
 local selectedBlock = nil
 local previewBlock = nil
 local isPreviewing = false
+local updatePreviewConnection = nil
 local placeItemButton = buildConfigs:WaitForChild("PlaceItemButton")  -- Adjust according to its actual location
 local cancelButton = buildConfigs:WaitForChild("CancelButton")  -- Assuming you have a CancelButton in your UI
+local function updatePreview()
+	if isPreviewing and previewBlock then
+		local mousePosition = UserInputService:GetMouseLocation()
+		local camera = workspace.CurrentCamera
+		local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterDescendantsInstances = {user.Character, previewBlock}
+		raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+		local raycastResult = workspace:Raycast(ray.Origin, ray.Direction * 500, raycastParams) -- Adjust the distance as needed
+		if raycastResult then
+			local plotName = getPlotFunction:InvokeServer()
+			if previewBlock and plotName then
+				local plot = game.Workspace.Plots:FindFirstChild(plotName)
+				if plot then
+					local plotPart = plot:FindFirstChild(plotName)
+					if raycastResult.Instance == plotPart then
+						for _, part in pairs(previewBlock:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.Color = Color3.new(0, 1, 0) -- Green
+							end
+						end
+						placeItemButton.Visible = true
+					else
+						for _, part in pairs(previewBlock:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.Color = Color3.new(1, 0, 0) -- Red
+							end
+						end
+						placeItemButton.Visible = false
+					end
+				end
+			end
+			local hitPosition = raycastResult.Position
+			local placementPosition = hitPosition + Vector3.new(0, previewBlock.PrimaryPart.Size.Y / 2, 0) -- Adjust the height offset as needed
+			previewBlock:SetPrimaryPartCFrame(CFrame.new(placementPosition))
+		end
+	end
+end
+
 local function startPreview(selectedBlockModel)
 	if not selectedBlockModel then
 		warn("No block selected for preview")
@@ -62,30 +117,14 @@ local function startPreview(selectedBlockModel)
 	else
 		warn("CancelButton not found")
 	end
-end
-
-local function updatePreview()
-	if isPreviewing and previewBlock then
-		local mousePosition = UserInputService:GetMouseLocation()
-		local camera = workspace.CurrentCamera
-		local ray = camera:ScreenPointToRay(mousePosition.X, mousePosition.Y)
-		local raycastParams = RaycastParams.new()
-		raycastParams.FilterDescendantsInstances = {user.Character, previewBlock}
-		raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-
-		local raycastResult = workspace:Raycast(ray.Origin, ray.Direction * 500, raycastParams) -- Adjust the distance as needed
-		if raycastResult then
-			local hitPosition = raycastResult.Position
-			local placementPosition = hitPosition + Vector3.new(0, previewBlock.PrimaryPart.Size.Y / 2, 0) -- Adjust the height offset as needed
-			previewBlock:SetPrimaryPartCFrame(CFrame.new(placementPosition))
-		end
+	if not updatePreviewConnection then
+		updatePreviewConnection = game:GetService("RunService").Heartbeat:Connect(updatePreview)
 	end
 end
 
 
 
-game:GetService("RunService").Heartbeat:Connect(updatePreview)
-local placeItemButton = buildConfigs:WaitForChild("PlaceItemButton")  -- Adjust according to its actual location
+
 local cancelButton = buildConfigs:WaitForChild("CancelButton")  -- Assuming you have a CancelButton in your UI
 
 local function handlePlaceItemButtonClick()
@@ -107,6 +146,10 @@ local function handlePlaceItemButtonClick()
 			selectedBlock = nil
 			placeItemButton.Visible = false
 			cancelButton.Visible = false
+			if updatePreviewConnection then
+				updatePreviewConnection:Disconnect()
+				updatePreviewConnection = nil
+			end
 			print("Placement data sent to server.")
 		else
 			warn("No plot found or preview block is invalid.")
@@ -128,6 +171,10 @@ local function handleCancelButtonClick()
 		selectedBlock = nil
 		placeItemButton.Visible = false
 		cancelButton.Visible = false
+		if updatePreviewConnection then
+			updatePreviewConnection:Disconnect()
+			updatePreviewConnection = nil
+		end
 	end
 end
 
@@ -206,18 +253,23 @@ local function finalizePlacement()
 	end
 end
 
--- Connect this function to wherever you want to listen for the mouse movements or touch
-updatePreview()
+
 
 
 -- Function to toggle BlocksShowcase GUI visibility
 local function toggleGui()
 	blocksShowcase.Visible = not blocksShowcase.Visible
+	if blocksShowcase.Visible then
+		showGridEvent:Fire()
+	else
+		hideGridEvent:Fire()
+	end
 end
 
 -- Function to close BlocksShowcase GUI
 local function closeGui()
 	blocksShowcase.Visible = false
+	hideGridEvent:Fire()
 end
 
 -- Create and configure UIGridLayout
@@ -329,22 +381,7 @@ if closeButton then
 	closeButton.MouseButton1Click:Connect(closeGui)
 end
 
--- Optionally, you can use UserInputService for touch support
-if UserInputService then
-	UserInputService.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch and input.UserInputState == Enum.UserInputState.Begin then
-			local touchPos = input.Position
-			local guiPos = openGuiButton.AbsolutePosition
-			local guiSize = openGuiButton.AbsoluteSize
 
-			if touchPos.x >= guiPos.x and touchPos.x <= guiPos.x + guiSize.x and touchPos.y >= guiPos.y and touchPos.y <= guiPos.y + guiSize.y then
-				toggleGui()
-			end
-		end
-	end)
-else
-
-end
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local restoreEvent = ReplicatedStorage:WaitForChild("restoreEvent")
 
