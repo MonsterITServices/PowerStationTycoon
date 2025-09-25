@@ -21,7 +21,7 @@ if not hideGridEvent then
 end
 
 local gridLines = {}
-local gridSize = 2
+local gridSize = 0.5
 
 local function createGrid(plotPart)
 	local plotSize = plotPart.Size

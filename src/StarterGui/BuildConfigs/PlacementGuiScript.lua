@@ -84,10 +84,10 @@ local function updatePreview()
 						placeItemButton.Visible = false
 					end
 				end
+				local hitPosition = raycastResult.Position
+				local placementPosition = hitPosition + Vector3.new(0, previewBlock.PrimaryPart.Size.Y / 2, 0) -- Adjust the height offset as needed
+				previewBlock:SetPrimaryPartCFrame(CFrame.new(placementPosition))
 			end
-			local hitPosition = raycastResult.Position
-			local placementPosition = hitPosition + Vector3.new(0, previewBlock.PrimaryPart.Size.Y / 2, 0) -- Adjust the height offset as needed
-			previewBlock:SetPrimaryPartCFrame(CFrame.new(placementPosition))
 		end
 	end
 end
@@ -175,6 +175,7 @@ local function handleCancelButtonClick()
 			updatePreviewConnection:Disconnect()
 			updatePreviewConnection = nil
 		end
+		hideGridEvent:Fire()
 	end
 end
 

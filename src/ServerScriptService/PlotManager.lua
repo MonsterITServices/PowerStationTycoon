@@ -2,6 +2,7 @@ local Plots = workspace:WaitForChild("Plots")
 local plotDataStore = game:GetService("DataStoreService"):GetDataStore("PlotData")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
 local playerPlots = SharedData.playerPlots -- Use the shared playerPlots table
 
@@ -19,6 +20,17 @@ if not getPlotFunction then
 	getPlotFunction = Instance.new("RemoteFunction")
 	getPlotFunction.Name = "GetPlotFunction"
 	getPlotFunction.Parent = ReplicatedStorage
+end
+
+local getOccupiedPlotsFunction = ReplicatedStorage:FindFirstChild("GetOccupiedPlotsFunction")
+if not getOccupiedPlotsFunction then
+	getOccupiedPlotsFunction = Instance.new("RemoteFunction")
+	getOccupiedPlotsFunction.Name = "GetOccupiedPlotsFunction"
+	getOccupiedPlotsFunction.Parent = ReplicatedStorage
+end
+
+getOccupiedPlotsFunction.OnServerInvoke = function()
+	return playerPlots
 end
 
 -- Function to teleport a player to their plot's spawn
@@ -42,6 +54,27 @@ end
 
 -- Function to set a user's plot
 local function setPlot(player, userId, plotName)
+	-- Check if the plot is already owned
+	for ownerId, ownedPlotName in pairs(playerPlots) do
+		if ownedPlotName == plotName and ownerId ~= userId then
+			warn("Player " .. player.Name .. " tried to claim an already owned plot.")
+			return
+		end
+	end
+
+	-- Clear the old plot
+	local oldPlotIdentifier = playerPlots[userId]
+	if oldPlotIdentifier then
+		local oldPlot = workspace.Plots:FindFirstChild(oldPlotIdentifier)
+		if oldPlot then
+			for _, child in pairs(oldPlot:GetChildren()) do
+				if CollectionService:HasTag(child, "PlayerBlock") then
+					child:Destroy()
+				end
+			end
+		end
+	end
+
 	local plot = workspace.Plots:FindFirstChild(plotName)
 	if plot then
 		-- Save to data store

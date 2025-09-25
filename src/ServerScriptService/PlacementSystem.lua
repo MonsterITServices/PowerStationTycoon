@@ -3,6 +3,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
+local CollectionService = game:GetService("CollectionService")
 
 local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
 local playerPlots = SharedData.playerPlots -- Use the shared playerPlots table from SharedData without redefining
@@ -45,8 +46,7 @@ local function clearPlayerPlot(userId)
 		local oldPlot = game.Workspace.Plots:FindFirstChild(oldPlotIdentifier)
 		if oldPlot then
 			for _, child in pairs(oldPlot:GetChildren()) do
-				-- Only delete children that are NOT the PrimaryPart
-				if child.Name ~= oldPlotIdentifier then
+				if CollectionService:HasTag(child, "PlayerBlock") then
 					child:Destroy()
 				end
 			end
@@ -78,7 +78,7 @@ local function isPositionInPlot(position, plotPart)
 
 	-- Check if the local position is within the plot's boundaries
 	if math.abs(localPosition.X) <= plotSize.X / 2 and
-	   math.abs(localPosition.Z) <= plotSize.Z / 2 then
+		math.abs(localPosition.Z) <= plotSize.Z / 2 then
 		return true
 	end
 
@@ -128,6 +128,7 @@ local function onPlaceEvent(player, blockName, position, rotation)
 	-- Set the block's position and parent
 	blockToPlace:SetPrimaryPartCFrame(CFrame.new(worldPosition) * worldRotation)
 	blockToPlace.Parent = plot
+	CollectionService:AddTag(blockToPlace, "PlayerBlock")
 
 	-- Ensure the block is anchored
 	for _, part in pairs(blockToPlace:GetDescendants()) do
@@ -252,6 +253,7 @@ local function restoreBlocks(player, plotName)
 							blockToPlace.Position = plotPosition + relativePosition
 						end
 						blockToPlace.Parent = plotGroup
+						CollectionService:AddTag(blockToPlace, "PlayerBlock")
 
 						-- Add the restored block to the playerBlocks table
 						table.insert(playerBlocks[userId], blockToPlace)
