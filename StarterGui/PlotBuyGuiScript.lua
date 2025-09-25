@@ -90,3 +90,13 @@ closeRestorePopupButton.MouseButton1Click:Connect(function()
 	local restorePopup = plotBuyGui:WaitForChild("RestorePopup")
 	restorePopup.Visible = false
 end)
+-- Somewhere in your PlotBuyGuiScript.lua, add this:
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local plotClaimedEvent = ReplicatedStorage:WaitForChild("PlotClaimedEvent")
+
+plotClaimedEvent.OnClientEvent:Connect(function(plotName)
+	-- This function will run when the server tells you that the plot is already taken.
+	-- You should display a message to the player here.
+	print("The plot " .. plotName .. " is already taken! Please choose another one.")
+	-- For a better user experience, you could show this message in a GUI element.
+end)
