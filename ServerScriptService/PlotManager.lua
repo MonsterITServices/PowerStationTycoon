@@ -29,6 +29,15 @@ if not getOccupiedPlotsFunction then
 	getOccupiedPlotsFunction.Parent = ReplicatedStorage
 end
 
+-- This new event will be used to tell the client that a plot is already claimed.
+local plotClaimedEvent = ReplicatedStorage:FindFirstChild("PlotClaimedEvent")
+if not plotClaimedEvent then
+	plotClaimedEvent = Instance.new("RemoteEvent")
+	plotClaimedEvent.Name = "PlotClaimedEvent"
+	plotClaimedEvent.Parent = ReplicatedStorage
+end
+
+
 getOccupiedPlotsFunction.OnServerInvoke = function()
 	return playerPlots
 end
@@ -54,11 +63,12 @@ end
 
 -- Function to set a user's plot
 local function setPlot(player, userId, plotName)
-	-- Check if the plot is already owned
+	-- Check if the plot is already owned by someone else
 	for ownerId, ownedPlotName in pairs(playerPlots) do
 		if ownedPlotName == plotName and ownerId ~= userId then
-			warn("Player " .. player.Name .. " tried to claim an already owned plot.")
-			return
+			warn("Player " .. player.Name .. " tried to claim plot " .. plotName .. " which is already owned by " .. ownerId)
+			plotClaimedEvent:FireClient(player, plotName) -- Fire event to the client
+			return -- Stop the function
 		end
 	end
 
@@ -134,6 +144,7 @@ Players.PlayerAdded:Connect(function(player)
 		teleportToPlot(player, plot)
 	end
 end)
+
 -- Handle player leaving to free up the plot
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
