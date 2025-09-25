@@ -134,3 +134,19 @@ Players.PlayerAdded:Connect(function(player)
 		teleportToPlot(player, plot)
 	end
 end)
+-- Handle player leaving to free up the plot
+Players.PlayerRemoving:Connect(function(player)
+	local userId = player.UserId
+	local plotName = playerPlots[userId]
+	if plotName then
+		local plot = Plots:FindFirstChild(plotName)
+		if plot then
+			local ownerTag = plot:FindFirstChild("Owner")
+			if ownerTag then
+				ownerTag:Destroy()
+			end
+		end
+		playerPlots[userId] = nil
+		print("Plot " .. plotName .. " is now available.")
+	end
+end)
