@@ -327,8 +327,16 @@ end
 -- Listen for the restore event
 restoreEvent.OnServerEvent:Connect(restoreBlocks)
 
--- Listen for when a player leaves to save their blocks
-Players.PlayerRemoving:Connect(savePlayerBlocks)
+-- Function to handle player removal
+local function onPlayerRemoving(player)
+	-- Save the player's blocks
+	savePlayerBlocks(player)
+	-- Clear the player's plot from the workspace
+	clearPlayerPlot(player.UserId)
+end
+
+-- Listen for when a player leaves to save their blocks and clear their plot
+Players.PlayerRemoving:Connect(onPlayerRemoving)
 
 -- Connect the delete event to the handler function
 deleteEvent.OnServerEvent:Connect(onDeleteEvent)
