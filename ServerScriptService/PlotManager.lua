@@ -6,52 +6,28 @@ local CollectionService = game:GetService("CollectionService")
 local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
 local playerPlots = SharedData.playerPlots -- Use the shared playerPlots table
 
--- Create or get the RemoteEvent for setting plots
-local setPlotEvent = ReplicatedStorage:FindFirstChild("SetPlotEvent")
-if not setPlotEvent then
-	setPlotEvent = Instance.new("RemoteEvent")
-	setPlotEvent.Name = "SetPlotEvent"
-	setPlotEvent.Parent = ReplicatedStorage
-end
+-- RemoteEvents and RemoteFunctions setup
+local setPlotEvent = ReplicatedStorage:FindFirstChild("SetPlotEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
+setPlotEvent.Name = "SetPlotEvent"
 
--- Create or get the RemoteFunction for getting plots
-local getPlotFunction = ReplicatedStorage:FindFirstChild("GetPlotFunction")
-if not getPlotFunction then
-	getPlotFunction = Instance.new("RemoteFunction")
-	getPlotFunction.Name = "GetPlotFunction"
-	getPlotFunction.Parent = ReplicatedStorage
-end
+local getPlotFunction = ReplicatedStorage:FindFirstChild("GetPlotFunction") or Instance.new("RemoteFunction", ReplicatedStorage)
+getPlotFunction.Name = "GetPlotFunction"
 
-local getOccupiedPlotsFunction = ReplicatedStorage:FindFirstChild("GetOccupiedPlotsFunction")
-if not getOccupiedPlotsFunction then
-	getOccupiedPlotsFunction = Instance.new("RemoteFunction")
-	getOccupiedPlotsFunction.Name = "GetOccupiedPlotsFunction"
-	getOccupiedPlotsFunction.Parent = ReplicatedStorage
-end
+local getOccupiedPlotsFunction = ReplicatedStorage:FindFirstChild("GetOccupiedPlotsFunction") or Instance.new("RemoteFunction", ReplicatedStorage)
+getOccupiedPlotsFunction.Name = "GetOccupiedPlotsFunction"
 
--- This new event will be used to tell the client that a plot is already claimed.
-local plotClaimedEvent = ReplicatedStorage:FindFirstChild("PlotClaimedEvent")
-if not plotClaimedEvent then
-	plotClaimedEvent = Instance.new("RemoteEvent")
-	plotClaimedEvent.Name = "PlotClaimedEvent"
-	plotClaimedEvent.Parent = ReplicatedStorage
-end
-
+local plotClaimedEvent = ReplicatedStorage:FindFirstChild("PlotClaimedEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
+plotClaimedEvent.Name = "PlotClaimedEvent"
 
 getOccupiedPlotsFunction.OnServerInvoke = function()
 	return playerPlots
 end
 
--- Function to teleport a player to their plot's spawn
 local function teleportToPlot(player, plot)
 	local character = player.Character or player.CharacterAdded:Wait()
 	local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-
-	-- Extract the plot number from the plot name (e.g., "Plot1" -> "1")
 	local plotNumber = string.gsub(plot.Name, "Plot", "")
 	local spawnName = "Spawn" .. plotNumber
-
-	-- Find the corresponding spawn location inside the plot model
 	local plotSpawn = plot:FindFirstChild(spawnName)
 
 	if humanoidRootPart and plotSpawn then
@@ -61,22 +37,36 @@ local function teleportToPlot(player, plot)
 	end
 end
 
+-- =================================================================
+-- MODIFIED FUNCTION
+-- =================================================================
 -- Function to set a user's plot
 local function setPlot(player, userId, plotName)
-	-- Check if the plot is already owned by someone else
-	for ownerId, ownedPlotName in pairs(playerPlots) do
-		if ownedPlotName == plotName and ownerId ~= userId then
-			warn("Player " .. player.Name .. " tried to claim plot " .. plotName .. " which is already owned by " .. ownerId)
-			plotClaimedEvent:FireClient(player, plotName) -- Fire event to the client
-			return -- Stop the function
-		end
+	local plot = workspace.Plots:FindFirstChild(plotName)
+	if not plot then
+		warn("Plot not found: " .. plotName)
+		return
 	end
 
-	-- Clear the old plot
+	-- NEW: Directly check the plot model for an "Owner" tag. This is more reliable.
+	local ownerTag = plot:FindFirstChild("Owner")
+	if ownerTag and ownerTag.Value ~= tostring(userId) then
+		warn("Player " .. player.Name .. " tried to claim plot " .. plotName .. " which is already owned by " .. ownerTag.Value)
+		plotClaimedEvent:FireClient(player, plotName) -- Fire event to the client to show the popup
+		return -- IMPORTANT: Stop the function here
+	end
+
+	-- Clear the player's old plot if they have one
 	local oldPlotIdentifier = playerPlots[userId]
-	if oldPlotIdentifier then
+	if oldPlotIdentifier and oldPlotIdentifier ~= plotName then
 		local oldPlot = workspace.Plots:FindFirstChild(oldPlotIdentifier)
 		if oldPlot then
+			-- Remove the owner tag from the old plot
+			local oldOwnerTag = oldPlot:FindFirstChild("Owner")
+			if oldOwnerTag then
+				oldOwnerTag:Destroy()
+			end
+			-- Destroy the blocks on the old plot
 			for _, child in pairs(oldPlot:GetChildren()) do
 				if CollectionService:HasTag(child, "PlayerBlock") then
 					child:Destroy()
@@ -85,67 +75,64 @@ local function setPlot(player, userId, plotName)
 		end
 	end
 
-	local plot = workspace.Plots:FindFirstChild(plotName)
-	if plot then
-		-- Save to data store
-		plotDataStore:SetAsync(userId, plotName)
+	-- Assign the new plot
+	plotDataStore:SetAsync(userId, plotName)
+	playerPlots[userId] = plotName
 
-		-- Create or update owner tag on plot
-		local ownerTag = plot:FindFirstChild("Owner")
-		if not ownerTag then
-			ownerTag = Instance.new("StringValue")
-			ownerTag.Name = "Owner"
-			ownerTag.Parent = plot
-		end
-		ownerTag.Value = tostring(userId)
-
-		-- Directly update the playerPlots table in PlacementSystem
-		playerPlots[userId] = plotName
-		print("Plot assigned to player:", userId, "Plot Name:", plotName)
-
-		-- Teleport the player to the plot
-		teleportToPlot(player, plot)
-	else
-		warn("Plot not found: " .. plotName)
+	-- Create or update the owner tag on the new plot
+	if not ownerTag then
+		ownerTag = Instance.new("StringValue")
+		ownerTag.Name = "Owner"
+		ownerTag.Parent = plot
 	end
+	ownerTag.Value = tostring(userId)
+
+	print("Plot assigned to player:", userId, "Plot Name:", plotName)
+	teleportToPlot(player, plot)
 end
 
--- Function to get a user's plot
 local function getPlot(userId)
 	local plotName, err = plotDataStore:GetAsync(userId)
 	if plotName then
-		playerPlots[userId] = plotName -- Make sure playerPlots is synchronized from the datastore
+		playerPlots[userId] = plotName
 		return Plots:FindFirstChild(plotName)
 	end
 	return nil
 end
 
--- Handle GetPlot requests
 getPlotFunction.OnServerInvoke = function(player)
 	local plot = getPlot(player.UserId)
 	if plot then
-		playerPlots[player.UserId] = plot.Name -- Update the playerPlots table
+		playerPlots[player.UserId] = plot.Name
 		return plot.Name
 	else
 		return nil
 	end
 end
 
--- Handle setPlot requests
 setPlotEvent.OnServerEvent:Connect(function(player, plotName)
 	setPlot(player, player.UserId, plotName)
 end)
 
--- Handle player joining
 Players.PlayerAdded:Connect(function(player)
+    -- Small delay to ensure everything loads
+    wait(2)
 	local plot = getPlot(player.UserId)
 	if plot then
-		-- Player has a plot, teleport them to it
+		-- When the player joins, re-apply the owner tag to their plot
+		local ownerTag = plot:FindFirstChild("Owner")
+		if not ownerTag then
+			ownerTag = Instance.new("StringValue")
+			ownerTag.Name = "Owner"
+			ownerTag.Parent = plot
+		end
+		ownerTag.Value = tostring(player.UserId)
+		playerPlots[player.UserId] = plot.Name
 		teleportToPlot(player, plot)
 	end
 end)
 
--- Handle player leaving to free up the plot
+
 Players.PlayerRemoving:Connect(function(player)
 	local userId = player.UserId
 	local plotName = playerPlots[userId]
