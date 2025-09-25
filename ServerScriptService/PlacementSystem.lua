@@ -39,11 +39,13 @@ if not deleteEvent then
 	deleteEvent.Parent = ReplicatedStorage
 end
 
--- Function to clear a player's plot
-local function clearPlayerPlot(userId)
-	local oldPlotIdentifier = playerPlots[userId]
-	if oldPlotIdentifier then
-		local oldPlot = game.Workspace.Plots:FindFirstChild(oldPlotIdentifier)
+-- =================================================================
+-- MODIFIED FUNCTION
+-- =================================================================
+-- This function now takes the plotIdentifier directly to avoid race conditions.
+local function clearPlayerPlot(plotIdentifier)
+	if plotIdentifier then
+		local oldPlot = game.Workspace.Plots:FindFirstChild(plotIdentifier)
 		if oldPlot then
 			for _, child in pairs(oldPlot:GetChildren()) do
 				if CollectionService:HasTag(child, "PlayerBlock") then
@@ -51,7 +53,8 @@ local function clearPlayerPlot(userId)
 				end
 			end
 		end
-		playerPlots[userId] = nil -- Remove the plot from the playerPlots table
+		-- The line that unassigned the plot is removed from here.
+		-- PlotManager is now solely responsible for plot assignment.
 	end
 end
 
@@ -72,24 +75,18 @@ end
 local function isPositionInPlot(position, plotPart)
 	local plotSize = plotPart.Size
 	local plotCFrame = plotPart.CFrame
-
-	-- Transform the position into the plot's local space
 	local localPosition = plotCFrame:PointToObjectSpace(position)
 
-	-- Check if the local position is within the plot's boundaries
 	if math.abs(localPosition.X) <= plotSize.X / 2 and
 		math.abs(localPosition.Z) <= plotSize.Z / 2 then
 		return true
 	end
-
 	return false
 end
 
 -- Event handler for block placement
 local function onPlaceEvent(player, blockName, position, rotation)
 	print("onPlaceEvent triggered", player.Name, blockName, position, rotation)
-
-	-- Retrieve the player's plot
 	local plotIdentifier = playerPlots[player.UserId]
 	if not plotIdentifier then
 		warn("Plot identifier not found for the player: " .. player.Name)
@@ -113,7 +110,6 @@ local function onPlaceEvent(player, blockName, position, rotation)
 		return
 	end
 
-	-- Find the block model to place
 	local blockToPlace = findBlockInGroups(ReplicatedStorage.Builder, blockName)
 	if not blockToPlace then
 		warn("Block not found: " .. blockName)
@@ -121,23 +117,19 @@ local function onPlaceEvent(player, blockName, position, rotation)
 	end
 	blockToPlace = blockToPlace:Clone()
 
-	-- Calculate the correct placement position relative to the plot
 	local worldPosition = position
 	local worldRotation = CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
 
-	-- Set the block's position and parent
 	blockToPlace:SetPrimaryPartCFrame(CFrame.new(worldPosition) * worldRotation)
 	blockToPlace.Parent = plot
 	CollectionService:AddTag(blockToPlace, "PlayerBlock")
 
-	-- Ensure the block is anchored
 	for _, part in pairs(blockToPlace:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.Anchored = true
 		end
 	end
 
-	-- Add the placed block to playerBlocks
 	if not playerBlocks[player.UserId] then
 		playerBlocks[player.UserId] = {}
 	end
@@ -148,14 +140,16 @@ end
 
 placeEvent.OnServerEvent:Connect(onPlaceEvent)
 
--- Function to save player blocks
-local function savePlayerBlocks(player)
+-- =================================================================
+-- MODIFIED FUNCTION
+-- =================================================================
+-- This function now takes the plotIdentifier directly.
+local function savePlayerBlocks(player, plotIdentifier)
 	if not player then return end
 	local userId = player.UserId
 	if not userId then return end
 
 	local blocks = playerBlocks[userId]
-	local plotIdentifier = playerPlots[userId]
 	if not plotIdentifier then
 		warn("Plot identifier not found for userId: " .. tostring(userId))
 		return
@@ -167,19 +161,13 @@ local function savePlayerBlocks(player)
 		return
 	end
 
-	-- Debugging step to list children of plotGroup to understand structure
-	print("Children of plotGroup:", plotGroup:GetChildren())
-
-	-- Try to locate the PrimaryPart within the plot group
 	local plot = plotGroup:FindFirstChildWhichIsA("BasePart")
 	if not plot then
 		warn("Primary part not found in plot group for identifier: " .. tostring(plotIdentifier))
 		return
 	end
 
-	print("Found plot primary part:", plot.Name)
-
-	local plotPosition = plot.Position -- Use PrimaryPart for accurate positioning
+	local plotPosition = plot.Position
 	local blockData = {}
 
 	if type(blocks) == "table" then
@@ -190,7 +178,7 @@ local function savePlayerBlocks(player)
 			elseif block:IsA("Model") and block.PrimaryPart then
 				position = block.PrimaryPart.Position - plotPosition
 			else
-				position = Vector3.new(0, 0, 0) -- Default or fallback value
+				position = Vector3.new(0, 0, 0)
 			end
 			table.insert(blockData, {Name = block.Name, Position = {position.X, position.Y, position.Z}})
 		end
@@ -200,7 +188,6 @@ local function savePlayerBlocks(player)
 	end
 
 	local jsonBlockData = HttpService:JSONEncode(blockData)
-
 	local success, errorMessage = pcall(function()
 		myDataStore:SetAsync(userId, jsonBlockData)
 	end)
@@ -213,35 +200,33 @@ end
 -- Restore blocks using json
 local function restoreBlocks(player, plotName)
 	if not player then return end
-
 	local userId = player.UserId
-	clearPlayerPlot(userId)
+
+	-- We still clear the plot, but using the modified function
+	local oldPlotIdentifier = playerPlots[userId]
+	clearPlayerPlot(oldPlotIdentifier)
+
 	local plotIdentifier = plotName or playerPlots[userId]
 	playerPlots[userId] = plotIdentifier
 	local plotGroup = game.Workspace.Plots:FindFirstChild(plotIdentifier)
 
 	if plotGroup then
-		-- Look for the Part named as the plotIdentifier
 		local plotPart = plotGroup:FindFirstChild(plotIdentifier)
 		if not plotPart or not plotPart:IsA("Part") then
 			warn("Primary part not found in plot group for identifier: " .. tostring(plotIdentifier))
 			return
 		end
-
 		local plotPosition = plotPart.Position
-
 		local success, jsonBlockData = pcall(function()
 			return myDataStore:GetAsync(userId)
 		end)
-
 		if success and jsonBlockData then
 			local blockData
 			local decodeSuccess, errorMessage = pcall(function()
 				blockData = HttpService:JSONDecode(jsonBlockData)
 			end)
-
 			if decodeSuccess then
-				playerBlocks[userId] = {} -- Clear existing blocks for the session
+				playerBlocks[userId] = {}
 				for _, data in pairs(blockData) do
 					local blockToPlace = findBlockInGroups(ReplicatedStorage.Builder, data.Name)
 					if blockToPlace then
@@ -254,11 +239,7 @@ local function restoreBlocks(player, plotName)
 						end
 						blockToPlace.Parent = plotGroup
 						CollectionService:AddTag(blockToPlace, "PlayerBlock")
-
-						-- Add the restored block to the playerBlocks table
 						table.insert(playerBlocks[userId], blockToPlace)
-
-						-- Handle anchoring correctly for both Model and Part
 						if blockToPlace:IsA("Model") then
 							for _, part in pairs(blockToPlace:GetDescendants()) do
 								if part:IsA("BasePart") then
@@ -287,27 +268,20 @@ local function onDeleteEvent(player, itemToDelete)
 		warn("Delete request for an invalid item from player: " .. player.Name)
 		return
 	end
-
-	-- 1. Verify that the player owns the plot the item is on
 	local plotIdentifier = playerPlots[player.UserId]
 	if not plotIdentifier then
 		warn("Player " .. player.Name .. " does not have a plot.")
 		return
 	end
-
 	local plot = game.Workspace.Plots:FindFirstChild(plotIdentifier)
 	if not plot then
 		warn("Plot not found for player: " .. player.Name)
 		return
 	end
-
-	-- 2. Verify that the item is on the player's plot
 	if itemToDelete.Parent ~= plot then
 		warn("Player " .. player.Name .. " attempted to delete an item they do not own.")
 		return
 	end
-
-	-- 3. Remove the item from the playerBlocks table to ensure the deletion is saved
 	local userId = player.UserId
 	if playerBlocks[userId] then
 		for i, block in ipairs(playerBlocks[userId]) do
@@ -317,10 +291,7 @@ local function onDeleteEvent(player, itemToDelete)
 			end
 		end
 	end
-
-	-- 4. Destroy the item from the workspace
 	itemToDelete:Destroy()
-
 	print("Item " .. itemToDelete.Name .. " deleted successfully by " .. player.Name)
 end
 
@@ -328,21 +299,27 @@ end
 restoreEvent.OnServerEvent:Connect(restoreBlocks)
 
 -- =================================================================
--- MODIFIED SECTION
+-- NEW AND IMPROVED PLAYER REMOVING LOGIC
 -- =================================================================
-
--- Function to handle everything that needs to happen when a player leaves
 local function onPlayerRemoving(player)
-	-- First, save all the blocks the player placed on their plot
-	print("Saving blocks for leaving player: " .. player.Name)
-	savePlayerBlocks(player)
+	-- IMPORTANT: Get the plot identifier ONCE, right at the start.
+	local plotIdentifier = playerPlots[player.UserId]
 
-	-- Second, destroy all the blocks from their plot in the workspace
-	print("Clearing plot for leaving player: " .. player.Name)
-	clearPlayerPlot(player.UserId)
+	-- If the player had no plot, there's nothing to do.
+	if not plotIdentifier then
+		return
+	end
+
+	-- Now, pass the saved plotIdentifier to the functions.
+	-- This will work even if PlotManager clears the assignment in the meantime.
+	print("Saving blocks for leaving player: " .. player.Name .. " from plot " .. plotIdentifier)
+	savePlayerBlocks(player, plotIdentifier)
+
+	print("Clearing items from plot " .. plotIdentifier)
+	clearPlayerPlot(plotIdentifier)
 end
 
--- Connect the consolidated function to the PlayerRemoving event
+-- Listen for when a player leaves to save their blocks and clear their plot
 Players.PlayerRemoving:Connect(onPlayerRemoving)
 
 -- Connect the delete event to the handler function
