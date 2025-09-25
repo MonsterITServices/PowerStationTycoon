@@ -1,3 +1,39 @@
+-- Add this to the top of your PlotBuyGuiScript.lua
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local plotClaimedEvent = ReplicatedStorage:WaitForChild("PlotClaimedEvent")
+
+-- =================================================================
+-- This is the new part for showing the "Plot Taken" message
+-- =================================================================
+--[[
+	You will need to create a simple Frame in your GUI to act as a popup.
+	For example, create a TextLabel inside a Frame.
+	Then, connect them to this script.
+--]]
+-- Example: local popupFrame = script.Parent.PopupFrame
+-- Example: local popupMessage = popupFrame.MessageLabel
+
+
+plotClaimedEvent.OnClientEvent:Connect(function(plotName)
+	print("The plot " .. plotName .. " is already taken! Please choose another one.")
+
+	-- To show a real popup message to the player, you would do something like this:
+	-- popupMessage.Text = "This plot is already taken! Please choose another."
+	-- popupFrame.Visible = true
+	-- wait(3) -- Show the message for 3 seconds
+	-- popupFrame.Visible = false
+end)
+
+
+-- The rest of your script that handles button clicks to buy plots would go here.
+-- For example:
+-- local buyButton = script.Parent.BuyButton
+-- local setPlotEvent = ReplicatedStorage:WaitForChild("SetPlotEvent")
+--
+-- buyButton.MouseButton1Click:Connect(function()
+--     local selectedPlot = -- get the plot the player selected
+--     setPlotEvent:FireServer(selectedPlot.Name)
+-- end)
 -- Client-Side Script: PlotBuyGuiScript
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
