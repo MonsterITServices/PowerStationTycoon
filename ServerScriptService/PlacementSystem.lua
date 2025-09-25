@@ -156,9 +156,9 @@ local function savePlayerBlocks(player)
 
 	local blocks = playerBlocks[userId]
 	local plotIdentifier = playerPlots[userId]
-	if not plotIdentifier then 
+	if not plotIdentifier then
 		warn("Plot identifier not found for userId: " .. tostring(userId))
-		return 
+		return
 	end
 
 	local plotGroup = game.Workspace.Plots:FindFirstChild(plotIdentifier)
@@ -327,15 +327,22 @@ end
 -- Listen for the restore event
 restoreEvent.OnServerEvent:Connect(restoreBlocks)
 
--- Function to handle player removal
+-- =================================================================
+-- MODIFIED SECTION
+-- =================================================================
+
+-- Function to handle everything that needs to happen when a player leaves
 local function onPlayerRemoving(player)
-	-- Save the player's blocks
+	-- First, save all the blocks the player placed on their plot
+	print("Saving blocks for leaving player: " .. player.Name)
 	savePlayerBlocks(player)
-	-- Clear the player's plot from the workspace
+
+	-- Second, destroy all the blocks from their plot in the workspace
+	print("Clearing plot for leaving player: " .. player.Name)
 	clearPlayerPlot(player.UserId)
 end
 
--- Listen for when a player leaves to save their blocks and clear their plot
+-- Connect the consolidated function to the PlayerRemoving event
 Players.PlayerRemoving:Connect(onPlayerRemoving)
 
 -- Connect the delete event to the handler function
