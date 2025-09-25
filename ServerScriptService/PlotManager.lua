@@ -1,150 +1,136 @@
-local Plots = workspace:WaitForChild("Plots")
-local plotDataStore = game:GetService("DataStoreService"):GetDataStore("PlotData")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local CollectionService = game:GetService("CollectionService")
-local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
-local playerPlots = SharedData.playerPlots -- Use the shared playerPlots table
+-- ServerScriptService/PlotManager.lua
 
--- RemoteEvents and RemoteFunctions setup
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local CollectionService = game:GetService("CollectionService")
+local Workspace = game:GetService("Workspace")
+
+local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
+local playerPlots = SharedData.playerPlots -- This table holds the current state: { [userId] = "PlotName" }
+
+-- DataStore for saving plot ownership
+local plotDataStore = DataStoreService:GetDataStore("PlotData")
+
+-- Ensure Workspace folders exist
+local PlotsFolder = Workspace:WaitForChild("Plots")
+
+-- RemoteEvents and Functions for communication with clients
 local setPlotEvent = ReplicatedStorage:FindFirstChild("SetPlotEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
 setPlotEvent.Name = "SetPlotEvent"
-
-local getPlotFunction = ReplicatedStorage:FindFirstChild("GetPlotFunction") or Instance.new("RemoteFunction", ReplicatedStorage)
-getPlotFunction.Name = "GetPlotFunction"
 
 local getOccupiedPlotsFunction = ReplicatedStorage:FindFirstChild("GetOccupiedPlotsFunction") or Instance.new("RemoteFunction", ReplicatedStorage)
 getOccupiedPlotsFunction.Name = "GetOccupiedPlotsFunction"
 
-local plotClaimedEvent = ReplicatedStorage:FindFirstChild("PlotClaimedEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
-plotClaimedEvent.Name = "PlotClaimedEvent"
+-- NEW: This event will be used to push live updates to all clients
+local PlotStatusUpdateEvent = ReplicatedStorage:FindFirstChild("PlotStatusUpdateEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
+PlotStatusUpdateEvent.Name = "PlotStatusUpdateEvent"
 
-getOccupiedPlotsFunction.OnServerInvoke = function()
-	return playerPlots
-end
 
+-- Function to teleport a player to their plot's spawn point
 local function teleportToPlot(player, plot)
-	local character = player.Character or player.CharacterAdded:Wait()
-	local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-	local plotNumber = string.gsub(plot.Name, "Plot", "")
-	local spawnName = "Spawn" .. plotNumber
-	local plotSpawn = plot:FindFirstChild(spawnName)
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 
-	if humanoidRootPart and plotSpawn then
-		humanoidRootPart.CFrame = plotSpawn.CFrame + Vector3.new(0, 3, 0)
-	else
-		warn("Plot spawn not found: " .. spawnName .. " in plot " .. plot.Name)
-	end
+    local plotNumber = string.gsub(plot.Name, "Plot", "")
+    local spawnName = "Spawn" .. plotNumber
+    local plotSpawn = plot:FindFirstChild(spawnName)
+
+    if humanoidRootPart and plotSpawn then
+        humanoidRootPart.CFrame = plotSpawn.CFrame + Vector3.new(0, 3, 0)
+    else
+        warn("Plot spawn not found: " .. spawnName .. " in plot " .. plot.Name)
+    end
 end
 
--- =================================================================
--- MODIFIED FUNCTION
--- =================================================================
--- Function to set a user's plot
-local function setPlot(player, userId, plotName)
-	local plot = workspace.Plots:FindFirstChild(plotName)
-	if not plot then
-		warn("Plot not found: " .. plotName)
-		return
-	end
+-- Function to handle a player's request to claim a plot
+local function onSetPlotRequest(player, plotName)
+    local userId = player.UserId
+    local plotToClaim = PlotsFolder:FindFirstChild(plotName)
 
-	-- NEW: Directly check the plot model for an "Owner" tag. This is more reliable.
-	local ownerTag = plot:FindFirstChild("Owner")
-	if ownerTag and ownerTag.Value ~= tostring(userId) then
-		warn("Player " .. player.Name .. " tried to claim plot " .. plotName .. " which is already owned by " .. ownerTag.Value)
-		plotClaimedEvent:FireClient(player, plotName) -- Fire event to the client to show the popup
-		return -- IMPORTANT: Stop the function here
-	end
+    if not plotToClaim then
+        warn("Player " .. player.Name .. " tried to claim a non-existent plot: " .. plotName)
+        return
+    end
 
-	-- Clear the player's old plot if they have one
-	local oldPlotIdentifier = playerPlots[userId]
-	if oldPlotIdentifier and oldPlotIdentifier ~= plotName then
-		local oldPlot = workspace.Plots:FindFirstChild(oldPlotIdentifier)
-		if oldPlot then
-			-- Remove the owner tag from the old plot
-			local oldOwnerTag = oldPlot:FindFirstChild("Owner")
-			if oldOwnerTag then
-				oldOwnerTag:Destroy()
-			end
-			-- Destroy the blocks on the old plot
-			for _, child in pairs(oldPlot:GetChildren()) do
-				if CollectionService:HasTag(child, "PlayerBlock") then
-					child:Destroy()
-				end
-			end
-		end
-	end
+    -- Final server-side check: Is the plot already owned by someone else?
+    for ownerId, ownedPlotName in pairs(playerPlots) do
+        if ownedPlotName == plotName and ownerId ~= userId then
+            warn("SERVER REJECTED: Player " .. player.Name .. " attempted to claim owned plot " .. plotName)
+            return -- Stop the function. The button should have been disabled, but this prevents exploits.
+        end
+    end
 
-	-- Assign the new plot
-	plotDataStore:SetAsync(userId, plotName)
-	playerPlots[userId] = plotName
+    -- --- Plot Claim is Successful ---
 
-	-- Create or update the owner tag on the new plot
-	if not ownerTag then
-		ownerTag = Instance.new("StringValue")
-		ownerTag.Name = "Owner"
-		ownerTag.Parent = plot
-	end
-	ownerTag.Value = tostring(userId)
+    -- 1. Clear the player's old plot if they are moving to a new one
+    local oldPlotName = playerPlots[userId]
+    if oldPlotName and oldPlotName ~= plotName then
+        local oldPlot = PlotsFolder:FindFirstChild(oldPlotName)
+        if oldPlot then
+            -- Clear old blocks
+            for _, child in pairs(oldPlot:GetChildren()) do
+                if CollectionService:HasTag(child, "PlayerBlock") then
+                    child:Destroy()
+                end
+            end
+        end
+        -- Announce that the old plot is now free
+        PlotStatusUpdateEvent:FireAllClients(oldPlotName, nil) -- nil owner means it's available
+    end
 
-	print("Plot assigned to player:", userId, "Plot Name:", plotName)
-	teleportToPlot(player, plot)
+    -- 2. Assign the new plot
+    playerPlots[userId] = plotName
+    plotDataStore:SetAsync(tostring(userId), plotName) -- Save to DataStore
+
+    -- 3. Teleport player and announce the plot is now taken
+    teleportToPlot(player, plotToClaim)
+    PlotStatusUpdateEvent:FireAllClients(plotName, userId) -- Announce the new owner
+
+    print("Plot '" .. plotName .. "' successfully claimed by " .. player.Name)
 end
 
-local function getPlot(userId)
-	local plotName, err = plotDataStore:GetAsync(userId)
-	if plotName then
-		playerPlots[userId] = plotName
-		return Plots:FindFirstChild(plotName)
-	end
-	return nil
-end
 
-getPlotFunction.OnServerInvoke = function(player)
-	local plot = getPlot(player.UserId)
-	if plot then
-		playerPlots[player.UserId] = plot.Name
-		return plot.Name
-	else
-		return nil
-	end
-end
+-- === Player Connection Handlers ===
 
-setPlotEvent.OnServerEvent:Connect(function(player, plotName)
-	setPlot(player, player.UserId, plotName)
-end)
-
+-- When a player joins, load their data and tell them the current status of all plots
 Players.PlayerAdded:Connect(function(player)
-    -- Small delay to ensure everything loads
-    wait(2)
-	local plot = getPlot(player.UserId)
-	if plot then
-		-- When the player joins, re-apply the owner tag to their plot
-		local ownerTag = plot:FindFirstChild("Owner")
-		if not ownerTag then
-			ownerTag = Instance.new("StringValue")
-			ownerTag.Name = "Owner"
-			ownerTag.Parent = plot
-		end
-		ownerTag.Value = tostring(player.UserId)
-		playerPlots[player.UserId] = plot.Name
-		teleportToPlot(player, plot)
-	end
+    local userId = player.UserId
+    local success, savedPlotName = pcall(function()
+        return plotDataStore:GetAsync(tostring(userId))
+    end)
+
+    if success and savedPlotName then
+        playerPlots[userId] = savedPlotName
+        local plot = PlotsFolder:FindFirstChild(savedPlotName)
+        if plot then
+            teleportToPlot(player, plot)
+            -- Crucially, update the status for everyone when the player logs in
+            PlotStatusUpdateEvent:FireAllClients(savedPlotName, userId)
+        end
+    end
 end)
 
-
+-- When a player leaves, free up their plot
 Players.PlayerRemoving:Connect(function(player)
-	local userId = player.UserId
-	local plotName = playerPlots[userId]
-	if plotName then
-		local plot = Plots:FindFirstChild(plotName)
-		if plot then
-			local ownerTag = plot:FindFirstChild("Owner")
-			if ownerTag then
-				ownerTag:Destroy()
-			end
-		end
-		playerPlots[userId] = nil
-		print("Plot " .. plotName .. " is now available.")
-	end
+    local userId = player.UserId
+    local plotName = playerPlots[userId]
+
+    if plotName then
+        playerPlots[userId] = nil -- Remove from the active server list
+        print("Player " .. player.Name .. " left. Plot '" .. plotName .. "' is now available.")
+        -- Announce to all remaining players that this plot is now free
+        PlotStatusUpdateEvent:FireAllClients(plotName, nil) -- Fire with nil owner
+    end
 end)
+
+
+-- === Remote Connections ===
+
+-- The client calls this function once when its GUI loads to get the initial state
+getOccupiedPlotsFunction.OnServerInvoke = function(player)
+    return playerPlots
+end
+
+-- Connect the client's request to claim a plot to the server function
+setPlotEvent.OnServerEvent:Connect(onSetPlotRequest)
