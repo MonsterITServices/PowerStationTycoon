@@ -9,7 +9,7 @@ local Workspace = game:GetService("Workspace")
 local SharedData = require(game.ServerScriptService:WaitForChild("SharedData"))
 local playerPlots = SharedData.playerPlots -- This table holds the current state: { [userId] = "PlotName" }
 
--- DataStore for saving plot ownership
+-- DataStore for saving plot ownership (we still save, but won't auto-load)
 local plotDataStore = DataStoreService:GetDataStore("PlotData")
 
 -- Ensure Workspace folders exist
@@ -22,7 +22,6 @@ setPlotEvent.Name = "SetPlotEvent"
 local getOccupiedPlotsFunction = ReplicatedStorage:FindFirstChild("GetOccupiedPlotsFunction") or Instance.new("RemoteFunction", ReplicatedStorage)
 getOccupiedPlotsFunction.Name = "GetOccupiedPlotsFunction"
 
--- NEW: This event will be used to push live updates to all clients
 local PlotStatusUpdateEvent = ReplicatedStorage:FindFirstChild("PlotStatusUpdateEvent") or Instance.new("RemoteEvent", ReplicatedStorage)
 PlotStatusUpdateEvent.Name = "PlotStatusUpdateEvent"
 
@@ -57,7 +56,7 @@ local function onSetPlotRequest(player, plotName)
     for ownerId, ownedPlotName in pairs(playerPlots) do
         if ownedPlotName == plotName and ownerId ~= userId then
             warn("SERVER REJECTED: Player " .. player.Name .. " attempted to claim owned plot " .. plotName)
-            return -- Stop the function. The button should have been disabled, but this prevents exploits.
+            return
         end
     end
 
@@ -68,7 +67,6 @@ local function onSetPlotRequest(player, plotName)
     if oldPlotName and oldPlotName ~= plotName then
         local oldPlot = PlotsFolder:FindFirstChild(oldPlotName)
         if oldPlot then
-            -- Clear old blocks
             for _, child in pairs(oldPlot:GetChildren()) do
                 if CollectionService:HasTag(child, "PlayerBlock") then
                     child:Destroy()
@@ -76,42 +74,34 @@ local function onSetPlotRequest(player, plotName)
             end
         end
         -- Announce that the old plot is now free
-        PlotStatusUpdateEvent:FireAllClients(oldPlotName, nil) -- nil owner means it's available
+        PlotStatusUpdateEvent:FireAllClients(oldPlotName, nil)
     end
 
     -- 2. Assign the new plot
     playerPlots[userId] = plotName
-    plotDataStore:SetAsync(tostring(userId), plotName) -- Save to DataStore
+    plotDataStore:SetAsync(tostring(userId), plotName) -- Save to DataStore for next time
 
     -- 3. Teleport player and announce the plot is now taken
     teleportToPlot(player, plotToClaim)
-    PlotStatusUpdateEvent:FireAllClients(plotName, userId) -- Announce the new owner
+    PlotStatusUpdateEvent:FireAllClients(plotName, userId)
 
     print("Plot '" .. plotName .. "' successfully claimed by " .. player.Name)
 end
 
 
--- === Player Connection Handlers ===
-
--- When a player joins, load their data and tell them the current status of all plots
+-- =================================================================
+-- MODIFIED SECTION
+-- =================================================================
+-- When a player joins, we will no longer automatically assign them a plot.
+-- They must choose one from the GUI. This prevents the "ghost" taken plots.
 Players.PlayerAdded:Connect(function(player)
-    local userId = player.UserId
-    local success, savedPlotName = pcall(function()
-        return plotDataStore:GetAsync(tostring(userId))
-    end)
-
-    if success and savedPlotName then
-        playerPlots[userId] = savedPlotName
-        local plot = PlotsFolder:FindFirstChild(savedPlotName)
-        if plot then
-            teleportToPlot(player, plot)
-            -- Crucially, update the status for everyone when the player logs in
-            PlotStatusUpdateEvent:FireAllClients(savedPlotName, userId)
-        end
-    end
+    print("Player " .. player.Name .. " has joined. They must select a plot.")
+    -- The server will now wait for the player to fire the 'setPlotEvent'.
+    -- The client GUI will handle showing them the available plots.
 end)
 
--- When a player leaves, free up their plot
+
+-- When a player leaves, free up their plot so others can claim it.
 Players.PlayerRemoving:Connect(function(player)
     local userId = player.UserId
     local plotName = playerPlots[userId]
@@ -120,7 +110,7 @@ Players.PlayerRemoving:Connect(function(player)
         playerPlots[userId] = nil -- Remove from the active server list
         print("Player " .. player.Name .. " left. Plot '" .. plotName .. "' is now available.")
         -- Announce to all remaining players that this plot is now free
-        PlotStatusUpdateEvent:FireAllClients(plotName, nil) -- Fire with nil owner
+        PlotStatusUpdateEvent:FireAllClients(plotName, nil)
     end
 end)
 
@@ -129,6 +119,7 @@ end)
 
 -- The client calls this function once when its GUI loads to get the initial state
 getOccupiedPlotsFunction.OnServerInvoke = function(player)
+    -- This now returns a list of plots taken ONLY by players in the current session.
     return playerPlots
 end
 
